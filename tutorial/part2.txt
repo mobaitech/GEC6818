@@ -1,0 +1,234 @@
+触摸屏的使用 
+    获取手指在开发板上滑动的坐标
+    开发板的坐标范围 600x1024
+
+
+1.linux输入设备原理 
+    输入设备:鼠标 键盘 耳机 ...
+    在linux中当我们使用输入设备的时候,就会产生一个对应的输入事件
+    因为不同的输入设备输入事件是不一样的 
+    在linux中,不同的输入事件都有一个对应的设备文件 
+    /dev/input/eventX(X = 0 1 2 3...)
+        触摸屏对应的文件名:/dev/input/event0
+
+
+    linux输入设备的原理:
+        经过内核驱动和输入子系统的处理,先把产生的输入事件
+        保存在对应的设备文件中
+        linux使用了一个结构体来保存不同的输入事件
+        需要包含一个头文件 
+            #include <linux/input.h>
+
+        /*
+        * The event structure itself
+        */
+
+        struct input_event {
+            struct timeval time;//事件发送的时间
+            __u16 type;//事件的类型
+            __u16 code;//事件的编码
+            __s32 value;//事件的值 
+        };
+
+
+        (1)time 时间 
+            事件发生的时间
+
+        (2)type 事件的类型 
+            EV_SYN  同步事件 
+            EV_KEY  按键事件 
+            EV_REL  鼠标事件 
+            EV_ABS  触摸事件 
+
+        (3)code 事件的编码 
+            根据type的不同,code的值也就不一样 
+            当type == EV_ABS ,code就代表坐标轴 
+                code == ABS_X //x坐标轴 
+                code == ABS_Y //y坐标轴 
+                code == ABS_PRESSURE //触摸屏压力事件
+
+            当type == EV_KEY ,code代表键值 
+                code = KEY_A KEY_B ....
+
+                code = BTN_TOUCH //把整个屏幕当作一个按键来使用
+
+
+        (4)value 
+            事件的值,根据type和code的不一样,含义也就不一样
+            当type == EV_ABS  
+                code == ABS_X  value就是x轴的坐标值 
+                code == ABS_Y  value就是y轴的坐标值 
+                code == ABS_PRESSURE value就是压力值 
+
+            当type == EV_KEY 
+                value表示按键的状态 
+                    1 按下按键 
+                    0 松开按键 
+
+
+2.触摸屏的输入事件的解析 
+    触摸屏的文件位置
+        /dev/input/event0
+
+
+    操作流程:
+        1.打开触摸屏 
+            int tc_fd = open("/dev/input/event0",O_RDWR);
+
+
+        2.读取数据 
+            struct input_event ev; 
+
+            int x,y;//坐标轴 
+
+
+            while(1)//一直来读取结构体的数据
+            {
+                read(tc_fd,&ev,sizeof(ev));
+                //x的坐标值 
+                if(ev.type == EV_ABS && ev.code == ABS_X)
+                {
+                    x = ev.value;
+                }
+                //y的坐标值
+
+
+                //打印x和y的坐标值 
+                printf("(%d,%d)\n"x,y);
+            }
+
+
+3.滑动手势的判断 
+    简单的滑动手势的判断
+        假设我有一个起始点和一个终止点 
+        起始点(x,y):手指第一次触摸屏幕所在的坐标 
+        终止点(x1,y1):手指离开屏幕时候的坐标
+
+        (0,0)---------------------------------------->
+        |
+        |
+        |       (x,y)
+        |
+        |
+        |
+        |                               (x1,y1)
+        |                   
+        y
+
+
+        从上面分析可得 
+            要判断滑动方向
+                首先需要判断水平位移和竖直位移的大小 
+
+                如果:
+                    |x-x1| > |y-y1|
+                    左右滑动 
+                        x < x1 右滑 
+                        x > x1 左滑 
+
+                    |x-x1| < |y-y1|
+                    上下滑动 
+                    y > y1 上滑 
+                    y < y1 下滑 
+
+        问题:
+            如何来保存起始点和终止点
+
+            终止点:最后手指离开屏幕保存的那个点
+
+            起始点如何来保存?
+                加一个限定条件 只有是第一次触摸屏幕我们才保存坐标
+
+        int get_touch_dir()
+        {
+            int tc_fd = open("/dev/input/event0",O_RDWR);
+            struct input_event ev; 
+            //定义起始点和终止点 
+            int x = -1,y = -1;
+            int x0,y0;
+
+            //获取数据
+            while(1)//一直来读取结构体的数据
+            {
+                read(tc_fd,&ev,sizeof(ev));
+                //x的坐标值 
+                if(ev.type == EV_ABS && ev.code == ABS_X)
+                {
+                    if(x == -1)
+                    {
+                        x = ev.value;
+                    }
+                    x0 = ev.value;
+                }
+                //y的坐标值
+                if(ev.type == EV_ABS && ev.code == ABS_Y)
+                {
+                    if(y == -1)
+                    {
+                        y = ev.value;
+                    }
+                    y0 = ev.value
+                }
+
+                //打印x和y的坐标值 
+                printf("(%d,%d)\n",x,y);
+
+                //当手指离开屏幕的时候,退出循环 把整个屏幕当做一个按键来使用
+                if(ev.type == EV_KEY && ev.code == BTN_TOUCH && ev.value == 0)
+                {
+                    //如果你的起始点或者终止点在某一个坐标范围之内
+                    return 5;//循环播放一次图片
+
+
+                    if(abs(x-x1) > abs(y-y1))//左右滑动
+                    {
+                        //左滑
+                        if(x > x1)
+                        {
+                            return 1;
+                        }
+                    }
+                    //右 
+                    return 2;
+
+                    //上 
+                    return 3;
+
+                    //下滑 
+                    return 4;
+
+                    
+                }
+               
+            }
+
+        }
+
+        int get_button()
+        {
+            //除了最后的返回值其他的内容都差不多
+        }
+        
+
+    项目的要求:
+        1.相册至少有4张照片 
+            通过滑动来切换 
+            切换是可以循环的
+
+        2.请大家根据获取滑动方向的代码 
+            写一个设置按键的代码 
+            只需要获取一个坐标 
+                判断这个坐标的值是否在一个范围之内
+                可以进行一次自动播放图片
+
+        3.在之前的基础上,加一个封面的功能
+            通过点击封面上的开始进入相册
+            进入相册之后,有一个退出的按钮能够回到封面
+
+        4.实验报告
+            实验配置 
+                环境的搭建
+            代码编写
+            代码导入
+            运行测试
+
